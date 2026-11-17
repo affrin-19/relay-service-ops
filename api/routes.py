@@ -1,10 +1,3 @@
-"""
-FastAPI REST Route Handlers for USM System.
-
-Implements all CRUD endpoints, comments, audit logs,
-LangGraph agent chat proxy, ChromaDB vector knowledge retrieval, and analytics.
-"""
-
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, Query, status
@@ -45,14 +38,8 @@ from api.schemas import (
 router = APIRouter()
 
 
-# ==============================================================================
-# 1. HEALTH CHECK ENDPOINT
-# ==============================================================================
 @router.get("/health", response_model=HealthResponse, tags=["System Health"])
 def health_check(db: Session = Depends(get_db)):
-    """
-    Returns operational health status across SQLite, ChromaDB, and LangGraph components.
-    """
     try:
         db.query(Ticket).first()
         db_status = "Connected (Healthy)"
@@ -68,7 +55,7 @@ def health_check(db: Session = Depends(get_db)):
 
     return {
         "status": "healthy" if "Healthy" in db_status else "degraded",
-        "version": "1.5.0 (Stage 5)",
+        "version": "1.5.0",
         "database": db_status,
         "knowledge_base": kb_status,
         "agent_engine": "LangGraph StateGraph (Active)",
@@ -76,26 +63,13 @@ def health_check(db: Session = Depends(get_db)):
     }
 
 
-# ==============================================================================
-# 2. ANALYTICS TELEMETRY ENDPOINT
-# ==============================================================================
-@router.get("/api/v1/analytics/metrics", response_model=AnalyticsMetricsResponse, tags=["Analytics & Telemetry"])
+@router.get("/api/v1/analytics/metrics", response_model=AnalyticsMetricsResponse, tags=["Analytics"])
 def get_analytics(db: Session = Depends(get_db)):
-    """
-    Calculates real-time incident resolution KPIs, department volume, and severity distributions.
-    """
-    data = get_detailed_analytics(db)
-    return data
+    return get_detailed_analytics(db)
 
 
-# ==============================================================================
-# 3. TICKET CRUD ENDPOINTS
-# ==============================================================================
 @router.post("/api/v1/tickets", response_model=TicketResponse, status_code=status.HTTP_201_CREATED, tags=["Tickets"])
 def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Depends(get_db)):
-    """
-    Creates a new IT incident or service request ticket with sequential ID (e.g., USM1001).
-    """
     ticket_dict = {
         "employee_name": payload.employee_name,
         "employee_email": payload.employee_email,
@@ -118,18 +92,15 @@ def create_ticket_endpoint(payload: TicketCreateRequest, db: Session = Depends(g
 
 @router.get("/api/v1/tickets", response_model=TicketListResponse, tags=["Tickets"])
 def list_tickets_endpoint(
-    search: Optional[str] = Query(None, description="Keyword search across title, description, requester"),
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status"),
-    priority_filter: Optional[str] = Query(None, alias="priority", description="Filter by priority"),
-    category_filter: Optional[str] = Query(None, alias="category", description="Filter by category"),
-    type_filter: Optional[str] = Query(None, alias="type", description="Filter by ticket type (Incident / Service Request)"),
+    search: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    priority_filter: Optional[str] = Query(None, alias="priority"),
+    category_filter: Optional[str] = Query(None, alias="category"),
+    type_filter: Optional[str] = Query(None, alias="type"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db)
 ):
-    """
-    Searches and filters tickets with pagination.
-    """
     matched = search_and_filter_tickets(
         db=db,
         search_query=search or "",
@@ -140,7 +111,7 @@ def list_tickets_endpoint(
     )
 
     total = len(matched)
-    paginated = matched[skip : skip + limit]
+    paginated = matched[skip: skip + limit]
 
     return {
         "total": total,
@@ -150,9 +121,6 @@ def list_tickets_endpoint(
 
 @router.get("/api/v1/tickets/{ticket_id}", response_model=TicketResponse, tags=["Tickets"])
 def get_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):
-    """
-    Retrieves a single ticket by its unique identifier (e.g. USM1001).
-    """
     ticket = get_ticket_by_ticket_id(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Ticket '{ticket_id}' not found.")
@@ -161,14 +129,11 @@ def get_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):
 
 @router.patch("/api/v1/tickets/{ticket_id}", response_model=TicketResponse, tags=["Tickets"])
 def update_ticket_endpoint(ticket_id: str, payload: TicketUpdateRequest, db: Session = Depends(get_db)):
-    """
-    Updates status, priority, or technician with role authorization checks.
-    """
-    ALLOWED_ROLES = {"admin", "lead_technician", "technician", "it_manager"}
-    if payload.auth_role.lower() not in ALLOWED_ROLES:
+    allowed_roles = {"admin", "lead_technician", "technician", "it_manager"}
+    if payload.auth_role.lower() not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Role '{payload.auth_role}' is not authorized to update tickets. Allowed: {list(ALLOWED_ROLES)}"
+            detail=f"Role '{payload.auth_role}' is not authorized to update tickets. Allowed: {list(allowed_roles)}"
         )
 
     ticket, err = db_update_ticket(
@@ -190,9 +155,6 @@ def update_ticket_endpoint(ticket_id: str, payload: TicketUpdateRequest, db: Ses
 
 @router.delete("/api/v1/tickets/{ticket_id}", tags=["Tickets"])
 def delete_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):
-    """
-    Permanently deletes a ticket from the database.
-    """
     deleted, err = db_delete_ticket(db, ticket_id)
     if not deleted:
         if err and "not found" in err.lower():
@@ -202,14 +164,8 @@ def delete_ticket_endpoint(ticket_id: str, db: Session = Depends(get_db)):
     return {"status": "success", "message": f"Ticket '{ticket_id}' deleted successfully."}
 
 
-# ==============================================================================
-# 4. COMMENTS & AUDIT TRAIL ENDPOINTS
-# ==============================================================================
-@router.post("/api/v1/tickets/{ticket_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED, tags=["Ticket Collaboration"])
+@router.post("/api/v1/tickets/{ticket_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED, tags=["Comments"])
 def add_comment_endpoint(ticket_id: str, payload: CommentCreateRequest, db: Session = Depends(get_db)):
-    """
-    Appends a new user comment or internal technician work note to a ticket thread.
-    """
     ticket = get_ticket_by_ticket_id(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Ticket '{ticket_id}' not found.")
@@ -228,15 +184,12 @@ def add_comment_endpoint(ticket_id: str, payload: CommentCreateRequest, db: Sess
     return comment.to_dict()
 
 
-@router.get("/api/v1/tickets/{ticket_id}/comments", response_model=List[CommentResponse], tags=["Ticket Collaboration"])
+@router.get("/api/v1/tickets/{ticket_id}/comments", response_model=List[CommentResponse], tags=["Comments"])
 def list_comments_endpoint(
     ticket_id: str,
-    include_internal: bool = Query(True, description="Include technician internal notes"),
+    include_internal: bool = Query(True),
     db: Session = Depends(get_db)
 ):
-    """
-    Retrieves the chronological message history for a ticket.
-    """
     ticket = get_ticket_by_ticket_id(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Ticket '{ticket_id}' not found.")
@@ -245,11 +198,8 @@ def list_comments_endpoint(
     return [c.to_dict() for c in comments]
 
 
-@router.get("/api/v1/tickets/{ticket_id}/audit-logs", response_model=List[AuditLogResponse], tags=["Ticket Collaboration"])
+@router.get("/api/v1/tickets/{ticket_id}/audit-logs", response_model=List[AuditLogResponse], tags=["Audit Logs"])
 def list_audit_logs_endpoint(ticket_id: str, db: Session = Depends(get_db)):
-    """
-    Retrieves immutable audit timeline for ticket status, assignment, and priority changes.
-    """
     ticket = get_ticket_by_ticket_id(db, ticket_id)
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Ticket '{ticket_id}' not found.")
@@ -258,14 +208,8 @@ def list_audit_logs_endpoint(ticket_id: str, db: Session = Depends(get_db)):
     return [l.to_dict() for l in logs]
 
 
-# ==============================================================================
-# 5. LANGGRAPH AGENT CHAT ENDPOINT
-# ==============================================================================
-@router.post("/api/v1/agent/chat", response_model=AgentChatResponse, tags=["AI Agent Workflows"])
+@router.post("/api/v1/agent/chat", response_model=AgentChatResponse, tags=["AI Agent"])
 def agent_chat_endpoint(payload: AgentChatRequest):
-    """
-    Executes the multi-agent LangGraph triage, RAG retrieval, and ticket generation pipeline.
-    """
     try:
         result = run_it_support_agent(
             user_query=payload.query,
@@ -290,18 +234,12 @@ def agent_chat_endpoint(payload: AgentChatRequest):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"LangGraph Agent execution failed: {str(e)}"
+            detail=f"LangGraph agent execution failed: {str(e)}"
         )
 
 
-# ==============================================================================
-# 6. KNOWLEDGE BASE & RAG ENDPOINTS
-# ==============================================================================
-@router.post("/api/v1/knowledge/query", response_model=KnowledgeQueryResponse, tags=["Knowledge Base (RAG)"])
+@router.post("/api/v1/knowledge/query", response_model=KnowledgeQueryResponse, tags=["Knowledge Base"])
 def query_knowledge_base_endpoint(payload: KnowledgeQueryRequest):
-    """
-    Executes dense vector similarity search against ChromaDB IT support documents.
-    """
     try:
         vs = USMVectorStore()
         chunks = vs.similarity_search(query=payload.query, top_k=payload.top_k)
@@ -328,11 +266,8 @@ def query_knowledge_base_endpoint(payload: KnowledgeQueryRequest):
         )
 
 
-@router.get("/api/v1/knowledge/documents", tags=["Knowledge Base (RAG)"])
+@router.get("/api/v1/knowledge/documents", tags=["Knowledge Base"])
 def list_knowledge_documents_endpoint():
-    """
-    Lists all indexed PDF manuals, policies, and SOPs currently stored in ChromaDB.
-    """
     try:
         vs = USMVectorStore()
         docs = vs.get_indexed_documents()
@@ -344,15 +279,8 @@ def list_knowledge_documents_endpoint():
         )
 
 
-# ==============================================================================
-# 8. AI COPILOT & ESM TELEMETRY ENDPOINTS (HELIXGPT & ATASSIAN ESM)
-# ==============================================================================
 @router.get("/api/v1/tickets/{ticket_id}/copilot-brief", tags=["AI Copilot"])
 def get_ticket_copilot_briefing(ticket_id: str, db: Session = Depends(get_db)):
-    """
-    Synthesizes executive briefing, similar historical incidents, and draft resolution
-    for technician incident investigation.
-    """
     from ai_copilot import (
         summarize_incident_thread,
         correlate_similar_incidents,
@@ -380,11 +308,7 @@ def get_ticket_copilot_briefing(ticket_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/api/v1/telemetry/esm-kpis", tags=["Telemetry & ESM Analytics"])
+@router.get("/api/v1/telemetry/esm-kpis", tags=["Telemetry"])
 def get_esm_kpis_endpoint(db: Session = Depends(get_db)):
-    """
-    Computes Enterprise Service Management (ESM) KPIs: Deflection Rate, Hours Saved,
-    CSAT index, and Proactive SLA Breach Radar.
-    """
     from ai_copilot import get_esm_business_value_kpis
     return get_esm_business_value_kpis(db)

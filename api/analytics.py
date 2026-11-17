@@ -1,10 +1,3 @@
-"""
-Analytics & Telemetry Engine for IT Service Management.
-
-Computes real-time operational KPIs, department breakdowns,
-SLA compliance, and category distributions directly from the database.
-"""
-
 from datetime import datetime
 from typing import Dict, Any
 from sqlalchemy.orm import Session
@@ -13,12 +6,8 @@ from models import Ticket
 
 
 def get_detailed_analytics(db: Session) -> Dict[str, Any]:
-    """
-    Aggregates comprehensive service desk operational telemetry.
-    """
     total = db.query(Ticket).count()
 
-    # Status counts
     open_count = db.query(Ticket).filter(
         Ticket.status.in_(["Open", "In Progress", "Pending Approval"])
     ).count()
@@ -32,7 +21,6 @@ def get_detailed_analytics(db: Session) -> Dict[str, Any]:
         Ticket.status.notin_(["Resolved", "Closed"])
     ).count()
 
-    # SLA Breached
     now = datetime.utcnow()
     sla_breached_count = db.query(Ticket).filter(
         Ticket.status.notin_(["Resolved", "Closed"]),
@@ -42,7 +30,6 @@ def get_detailed_analytics(db: Session) -> Dict[str, Any]:
 
     resolution_rate = round((resolved_count / total * 100), 1) if total > 0 else 0.0
 
-    # Severity distribution
     severity_breakdown = {
         "Critical": db.query(Ticket).filter(Ticket.priority == "Critical").count(),
         "High": db.query(Ticket).filter(Ticket.priority == "High").count(),
@@ -50,21 +37,18 @@ def get_detailed_analytics(db: Session) -> Dict[str, Any]:
         "Low": db.query(Ticket).filter(Ticket.priority == "Low").count(),
     }
 
-    # Category distribution
     categories = ["Network", "Hardware", "Software", "Access", "Email", "Infrastructure"]
-    category_breakdown = {}
-    for cat in categories:
-        category_breakdown[cat] = db.query(Ticket).filter(Ticket.category.ilike(f"%{cat}%")).count()
+    category_breakdown = {
+        cat: db.query(Ticket).filter(Ticket.category.ilike(f"%{cat}%")).count()
+        for cat in categories
+    }
 
-    # Department distribution
     dept_rows = db.query(Ticket.department, func.count(Ticket.id)).group_by(Ticket.department).all()
     department_breakdown = {dept: count for dept, count in dept_rows} if dept_rows else {"Engineering": 0}
 
-    # Status distribution
     status_rows = db.query(Ticket.status, func.count(Ticket.id)).group_by(Ticket.status).all()
     status_breakdown = {st: count for st, count in status_rows} if status_rows else {"Open": 0}
 
-    # Ticket Type distribution
     type_rows = db.query(Ticket.ticket_type, func.count(Ticket.id)).group_by(Ticket.ticket_type).all()
     type_breakdown = {t: count for t, count in type_rows} if type_rows else {"Incident": total}
 

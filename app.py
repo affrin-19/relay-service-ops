@@ -1,7 +1,5 @@
 """
-Relay - Internal Operations & Incident Infrastructure.
-Editorial-grade IT Service Management platform engineered with minimalist,
-high-contrast typography and precise industrial design tokens.
+Relay: IT Service Management platform and operations console.
 """
 
 import os
@@ -42,12 +40,8 @@ from ai_copilot import (
 from config import get_openai_api_key, is_openai_configured, get_masked_api_key, LLM_MODEL_NAME
 
 
-# ==============================================================================
-# 0. HIGH-PERFORMANCE RESOURCE CACHING (PREVENTS LAG & FLICKERING)
-# ==============================================================================
 @st.cache_resource
 def bootstrap_database():
-    """Initializes schema and default records once on server startup."""
     init_db()
     db = next(get_db())
     try:
@@ -56,18 +50,15 @@ def bootstrap_database():
         db.close()
     return True
 
+
 @st.cache_resource
 def get_cached_vector_store():
-    """Caches ChromaDB client in memory to avoid 500ms disk overhead per click."""
     return USMVectorStore()
 
-# Run startup bootstrap once
+
 bootstrap_database()
 
 
-# ==============================================================================
-# 1. DESIGN TOKENS & HIGH-PERFORMANCE STYLING
-# ==============================================================================
 st.set_page_config(
     page_title="Relay / Ops Console",
     page_icon="▪",
@@ -454,19 +445,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# 2. TOP MASTHEAD BAR
-# ==============================================================================
 def render_masthead():
     st.markdown("""<div class="relay-masthead"><div class="relay-brand"><span>●</span>RELAY / UNIFIED OPERATIONS CONSOLE</div><div class="relay-telemetry-mono">UNIFIED SERVICE MANAGEMENT (ESM) &nbsp;·&nbsp; AI MATURITY: LEVEL 3 &nbsp;·&nbsp; GATEWAY: 8000/TCP</div></div>""", unsafe_allow_html=True)
 
 
-# ==============================================================================
-# 3. SIDEBAR NAVIGATION
-# ==============================================================================
 @st.cache_data(ttl=5)
 def get_cached_sidebar_telemetry():
-    """Caches queue telemetry for 5 seconds to ensure instantaneous navigation."""
     db = next(get_db())
     try:
         total = db.query(Ticket).count()
@@ -502,7 +486,6 @@ def render_sidebar():
             "06 / System Telemetry"
         ]
 
-        # Use native widget key for instantaneous single-render tab switching (zero flickering)
         selected_page = st.radio(
             label="Navigation Menu",
             options=nav_options,
@@ -519,9 +502,6 @@ def render_sidebar():
     return selected_page
 
 
-# ==============================================================================
-# 4. VIEW: TRIAGE CONSOLE (DASHBOARD)
-# ==============================================================================
 def render_triage_console():
     db = next(get_db())
     try:
@@ -535,7 +515,6 @@ def render_triage_console():
     st.markdown('<div class="relay-heading">Unified Ops Floor / Incident Queue</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Enterprise Service Management (ESM) telemetry, AI deflection velocity, and engineering dispatch across internal services.</div>', unsafe_allow_html=True)
 
-    # ITIL / Atlassian ESM Business Value Metrics
     st.markdown('<div class="relay-section-label">AI COPILOT & SERVICE EFFICIENCY TELEMETRY</div>', unsafe_allow_html=True)
     e1, e2, e3, e4 = st.columns(4)
     with e1:
@@ -550,10 +529,9 @@ def render_triage_console():
 
     st.write("")
 
-    # Proactive SLA Imminent Breach Radar (BMC Helix Concept)
     st.markdown('<div class="relay-section-label">PROACTIVE SLA PREDICTIVE RADAR</div>', unsafe_allow_html=True)
     if esm_kpis["at_risk_count"] > 0:
-        st.warning(f"⚠️ PROACTIVE RADAR: {esm_kpis['at_risk_count']} in-flight incident(s) approaching target SLA deadline within 2 hours. Prioritize dispatch.")
+        st.warning(f"PROACTIVE RADAR: {esm_kpis['at_risk_count']} in-flight incident(s) approaching target SLA deadline within 2 hours. Prioritize dispatch.")
         st.dataframe(pd.DataFrame(esm_kpis["at_risk_tickets"]), use_container_width=True, hide_index=True)
     else:
         st.markdown('<div style="font-family:\'IBM Plex Mono\', monospace; font-size:0.75rem; color:var(--text-secondary); padding:0.5rem 0.75rem; background:rgba(61,139,104,0.08); border-left:3px solid #3D8B68; border-radius:0 4px 4px 0; margin-bottom:1rem;">● PROACTIVE RADAR: All in-flight incidents pacing within safe SLA margin. Zero breaches predicted in 2-hour window.</div>', unsafe_allow_html=True)
@@ -642,18 +620,12 @@ def render_triage_console():
         st.info("Queue clear. No records logged.")
 
 
-# ==============================================================================
-# 5. VIEW: INCIDENT DESK
-# ==============================================================================
 def render_incident_desk():
     st.markdown('<div class="relay-heading">Incident Desk</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Triage incoming tickets, maintain internal work notes, and enforce resolution commitments.</div>', unsafe_allow_html=True)
 
     tab_queue, tab_intake = st.tabs(["Active Incidents & Records", "Log Disruption Report"])
 
-    # --------------------------------------------------------------------------
-    # TAB 1: INCIDENT QUEUE & INVESTIGATION
-    # --------------------------------------------------------------------------
     with tab_queue:
         db = next(get_db())
         try:
@@ -709,7 +681,6 @@ def render_incident_desk():
                 target = get_ticket_by_ticket_id(db, selected_tid)
 
                 if target:
-                    # Minimal State Stepper
                     states = ["Open", "In Progress", "Pending Approval", "Resolved", "Closed"]
                     curr_state = target.status
                     curr_idx = states.index(curr_state) if curr_state in states else 0
@@ -717,14 +688,13 @@ def render_incident_desk():
                     stepper_parts = []
                     for idx, s in enumerate(states):
                         if idx < curr_idx:
-                            stepper_parts.append(f'<div class="relay-step completed">✓ {s.upper()}</div>')
+                            stepper_parts.append(f'<div class="relay-step completed">{s.upper()}</div>')
                         elif idx == curr_idx:
                             stepper_parts.append(f'<div class="relay-step active">[{s.upper()}]</div>')
                         else:
                             stepper_parts.append(f'<div class="relay-step">{s.upper()}</div>')
                     st.markdown(f'<div class="relay-stepper">{"".join(stepper_parts)}</div>', unsafe_allow_html=True)
 
-                    # Asymmetric 8 / 4 Split
                     det_left, det_right = st.columns([8, 4])
 
                     with det_left:
@@ -737,9 +707,6 @@ def render_incident_desk():
                         with st.container(border=True):
                             st.write(target.description)
 
-                        # ======================================================
-                        # AI OPERATIONS COPILOT DRAWER (HELIXGPT & ATASSIAN PATTERN)
-                        # ======================================================
                         st.write("")
                         st.markdown('<div class="relay-section-label">AI OPERATIONS COPILOT (AGENT ASSIST)</div>', unsafe_allow_html=True)
                         with st.container(border=True):
@@ -840,7 +807,6 @@ def render_incident_desk():
                                     })
                                 st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-                        # Render Journal Chronology
                         comments = get_ticket_comments(db, target.ticket_id, include_internal=True)
                         if comments:
                             st.write("")
@@ -852,7 +818,6 @@ def render_incident_desk():
                                     st.markdown(f'<div class="relay-public-comment"><b>CUSTOMER REPLY</b> &nbsp;·&nbsp; {c.author_name} &nbsp;·&nbsp; <span style="color:var(--text-muted); font-size:0.75rem;">{ts}</span><br/><div style="margin-top:0.35rem;">{c.message}</div></div>', unsafe_allow_html=True)
 
                     with det_right:
-                        # Clean Native Streamlit Container (No Raw HTML Leaks)
                         with st.container(border=True):
                             st.markdown('<div class="relay-section-label">REQUESTER</div>', unsafe_allow_html=True)
                             st.markdown(f"**{target.employee_name}**")
@@ -895,9 +860,6 @@ def render_incident_desk():
         finally:
             db.close()
 
-    # --------------------------------------------------------------------------
-    # TAB 2: INTAKE FORM
-    # --------------------------------------------------------------------------
     with tab_intake:
         st.markdown('<div class="relay-section-label">INTAKE SPECIFICATION</div>', unsafe_allow_html=True)
         st.caption("Submit an unplanned interruption to production hardware, network routing, or software access.")
@@ -941,9 +903,6 @@ def render_incident_desk():
                     db.close()
 
 
-# ==============================================================================
-# 6. VIEW: PROVISIONING CATALOG (UNIFIED ENTERPRISE SERVICE MANAGEMENT)
-# ==============================================================================
 def render_service_catalog():
     st.markdown('<div class="relay-heading">Unified Service Catalog (ESM)</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Enterprise Service Management portal bridging IT infrastructure, Workplace Facilities, and People Operations under automated SLA fulfillment.</div>', unsafe_allow_html=True)
@@ -1034,9 +993,6 @@ def render_service_catalog():
             _render_item_card("HR-04", "Global Travel Roaming eSIM & Secure Gateway", "Access", "4 Hours", "Security Lead", "International encrypted cellular data profile with zero-trust tunnel routing for traveling executives.")
 
 
-# ==============================================================================
-# 7. VIEW: VIRTUAL OPERATOR (AGENT)
-# ==============================================================================
 def render_virtual_operator():
     st.markdown('<div class="relay-heading">Virtual Operator</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Autonomous triage engine. Resolves SOP inquiries from local documentation or drafts incident tickets for team review.</div>', unsafe_allow_html=True)
@@ -1109,14 +1065,13 @@ def render_virtual_operator():
                     finally:
                         db.close()
 
-            # Interactive Self-Service Deflection & Feedback (ITIL 4 / Atlassian Deflection Pattern)
             if msg["role"] == "assistant" and idx > 0 and not msg.get("pending_draft"):
                 f1, f2 = st.columns([1, 1])
                 with f1:
-                    if st.button("✓ Solved my issue (Record Deflection)", key=f"def_{idx}"):
+                    if st.button("Solved my issue (Record Deflection)", key=f"def_{idx}"):
                         st.success("Resolution confirmed. Telemetry updated in ESM Operations Dashboard (+22 min deflection credit).")
                 with f2:
-                    if st.button("✕ Need Human Technician Dispatch", key=f"esc_{idx}"):
+                    if st.button("Request technician dispatch", key=f"esc_{idx}"):
                         st.info("Inquiry marked for technician intake in 02 / Incident Desk.")
 
     user_query = st.chat_input("Enter inquiry or ticket instruction...") or prompt_to_run
@@ -1161,9 +1116,6 @@ def render_virtual_operator():
                     st.rerun()
 
 
-# ==============================================================================
-# 8. VIEW: KNOWLEDGE INDEX
-# ==============================================================================
 def render_knowledge_index():
     st.markdown('<div class="relay-heading">Knowledge Index</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Vector documentation corpus indexing corporate runbooks, network diagrams, and standard operating procedures.</div>', unsafe_allow_html=True)
@@ -1218,9 +1170,6 @@ def render_knowledge_index():
             st.info("No documents currently indexed.")
 
 
-# ==============================================================================
-# 9. VIEW: SYSTEM TELEMETRY
-# ==============================================================================
 def render_system_telemetry():
     st.markdown('<div class="relay-heading">System Telemetry</div>', unsafe_allow_html=True)
     st.markdown('<div class="relay-subheading">Operational health monitoring, queue distribution, and REST gateway diagnostics.</div>', unsafe_allow_html=True)
@@ -1281,13 +1230,6 @@ def render_system_telemetry():
             db.close()
 
 
-# Compatibility alias for test suites
-render_ai_assistant = render_virtual_operator
-
-
-# ==============================================================================
-# 10. MAIN ROUTER
-# ==============================================================================
 def main():
     render_masthead()
     page = render_sidebar()
@@ -1305,6 +1247,10 @@ def main():
     elif page == "06 / System Telemetry":
         render_system_telemetry()
 
+
+render_ai_assistant = render_virtual_operator
+render_admin_panel = render_incident_desk
+render_knowledge_base = render_knowledge_index
 
 if __name__ == "__main__":
     main()

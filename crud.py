@@ -1,10 +1,3 @@
-"""
-CRUD (Create, Read, Update, Delete) Operations Module.
-
-Contains all database interaction logic, transaction management,
-SLA computation, comment threads, and audit trail logging for Tickets.
-"""
-
 import re
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple, Dict, Any
@@ -14,14 +7,7 @@ from models import Ticket, TicketComment, TicketAuditLog
 from notifications import dispatch_incident_alert
 
 
-# ==============================================================================
-# 1. INPUT VALIDATION & SLA CALCULATOR
-# ==============================================================================
 def validate_ticket_input(data: Dict[str, Any]) -> Tuple[bool, str]:
-    """
-    Validates user form inputs before attempting database persistence.
-    Returns (True, "") if valid, or (False, "Error message") if invalid.
-    """
     required_fields = {
         "employee_name": "Employee Name",
         "employee_email": "Work Email",
@@ -36,10 +22,8 @@ def validate_ticket_input(data: Dict[str, Any]) -> Tuple[bool, str]:
         if not val:
             return False, f"Field '{label}' is required and cannot be empty."
 
-    # Validate email format using regex
     email = data.get("employee_email", "").strip()
-    email_pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    if not re.match(email_pattern, email):
+    if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", email):
         return False, "Please provide a valid work email address (e.g., employee@company.com)."
 
     if len(data.get("title", "").strip()) < 5:
@@ -52,40 +36,19 @@ def validate_ticket_input(data: Dict[str, Any]) -> Tuple[bool, str]:
 
 
 def calculate_sla_deadlines(priority: str, base_time: Optional[datetime] = None) -> Tuple[datetime, datetime]:
-    """
-    Calculates SLA response and resolution deadlines based on ITIL standard target matrices.
-    - Critical: Response in 15 mins, Resolution in 4 hours
-    - High:     Response in 1 hour,   Resolution in 8 hours
-    - Medium:   Response in 4 hours,  Resolution in 24 hours
-    - Low:      Response in 8 hours,  Resolution in 72 hours
-    """
     base = base_time or datetime.utcnow()
     prio_norm = priority.strip().capitalize() if priority else "Medium"
 
     if prio_norm == "Critical":
-        resp_due = base + timedelta(minutes=15)
-        resol_due = base + timedelta(hours=4)
-    elif prio_norm == "High":
-        resp_due = base + timedelta(hours=1)
-        resol_due = base + timedelta(hours=8)
-    elif prio_norm == "Low":
-        resp_due = base + timedelta(hours=8)
-        resol_due = base + timedelta(hours=72)
-    else:  # Medium default
-        resp_due = base + timedelta(hours=4)
-        resol_due = base + timedelta(hours=24)
-
-    return resp_due, resol_due
+        return base + timedelta(minutes=15), base + timedelta(hours=4)
+    if prio_norm == "High":
+        return base + timedelta(hours=1), base + timedelta(hours=8)
+    if prio_norm == "Low":
+        return base + timedelta(hours=8), base + timedelta(hours=72)
+    return base + timedelta(hours=4), base + timedelta(hours=24)
 
 
-# ==============================================================================
-# 2. TICKET ID GENERATOR
-# ==============================================================================
 def generate_ticket_id(db: Session) -> str:
-    """
-    Generates sequential, professional ticket identifiers (e.g., USM1001, USM1002).
-    Inspects the highest existing primary key to guarantee uniqueness without race conditions.
-    """
     last_ticket = db.query(Ticket).order_by(Ticket.id.desc()).first()
     if not last_ticket:
         return "USM1001"
@@ -101,14 +64,7 @@ def generate_ticket_id(db: Session) -> str:
     return f"USM{1000 + last_ticket.id + 1}"
 
 
-# ==============================================================================
-# 3. CREATE OPERATION
-# ==============================================================================
 def create_ticket(db: Session, data: Dict[str, Any]) -> Tuple[Optional[Ticket], Optional[str]]:
-    """
-    Creates a new incident or service request ticket with automatic SLA calculation
-    and audit logging.
-    """
     is_valid, validation_error = validate_ticket_input(data)
     if not is_valid:
         return None, validation_error
@@ -144,7 +100,6 @@ def create_ticket(db: Session, data: Dict[str, Any]) -> Tuple[Optional[Ticket], 
         db.add(ticket)
         db.flush()
 
-        # Record initial creation in audit log
         audit = TicketAuditLog(
             ticket_id=new_ticket_id,
             action="ticket_created",
@@ -158,7 +113,6 @@ def create_ticket(db: Session, data: Dict[str, Any]) -> Tuple[Optional[Ticket], 
         db.commit()
         db.refresh(ticket)
 
-        # Trigger automatic notification for high/critical priority
         if priority in ["Critical", "High"]:
             dispatch_incident_alert(ticket.to_api_dict())
 
@@ -169,13 +123,7 @@ def create_ticket(db: Session, data: Dict[str, Any]) -> Tuple[Optional[Ticket], 
         return None, f"Database transaction failed: {str(e)}"
 
 
-# ==============================================================================
-# 4. READ OPERATIONS
-# ==============================================================================
 def get_all_tickets(db: Session, limit: int = 500) -> List[Ticket]:
-    """
-    Retrieves all tickets ordered by newest first.
-    """
     try:
         return db.query(Ticket).order_by(Ticket.id.desc()).limit(limit).all()
     except SQLAlchemyError:
@@ -183,13 +131,9 @@ def get_all_tickets(db: Session, limit: int = 500) -> List[Ticket]:
 
 
 def get_ticket_by_ticket_id(db: Session, ticket_id: str) -> Optional[Ticket]:
-    """
-    Fetches a single ticket by its business code (e.g., 'USM1001').
-    """
     try:
         ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id.strip()).first()
         if ticket and ticket.sla_due_date:
-            # Check SLA breach dynamically
             if ticket.status not in ["Resolved", "Closed"] and datetime.utcnow() > ticket.sla_due_date:
                 if not ticket.is_sla_breached:
                     ticket.is_sla_breached = True
@@ -207,9 +151,6 @@ def search_and_filter_tickets(
     category_filter: str = "All",
     type_filter: str = "All"
 ) -> List[Ticket]:
-    """
-    Performs dynamic multi-column search and facet filtering on ticket records.
-    """
     try:
         query = db.query(Ticket)
 
@@ -243,9 +184,6 @@ def search_and_filter_tickets(
 
 
 def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
-    """
-    Computes real-time operational metrics directly from database records.
-    """
     try:
         total_tickets = db.query(Ticket).count()
 
@@ -262,7 +200,6 @@ def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
             Ticket.status.notin_(["Resolved", "Closed"])
         ).count()
 
-        # Check active SLA breaches
         now = datetime.utcnow()
         sla_breached_count = db.query(Ticket).filter(
             Ticket.status.notin_(["Resolved", "Closed"]),
@@ -304,9 +241,6 @@ def get_dashboard_metrics(db: Session) -> Dict[str, Any]:
         }
 
 
-# ==============================================================================
-# 5. UPDATE OPERATION WITH AUDIT TRAIL
-# ==============================================================================
 def update_ticket(
     db: Session,
     ticket_id: str,
@@ -316,9 +250,6 @@ def update_ticket(
     resolution_notes: Optional[str] = None,
     performed_by: str = "IT Staff"
 ) -> Tuple[Optional[Ticket], Optional[str]]:
-    """
-    Updates operational attributes of an existing ticket and records audit entries.
-    """
     try:
         ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id.strip()).first()
         if not ticket:
@@ -341,7 +272,6 @@ def update_ticket(
         if priority and priority != ticket.priority:
             old_p = ticket.priority
             ticket.priority = priority
-            # Recalculate SLA if still open
             if ticket.status not in ["Resolved", "Closed"]:
                 _, resol_due = calculate_sla_deadlines(priority, ticket.created_at)
                 ticket.sla_due_date = resol_due
@@ -380,19 +310,12 @@ def update_ticket(
         return None, f"Failed to update ticket: {str(e)}"
 
 
-# ==============================================================================
-# 6. DELETE OPERATION
-# ==============================================================================
 def delete_ticket(db: Session, ticket_id: str) -> Tuple[bool, Optional[str]]:
-    """
-    Removes a ticket record and its associated comments and audit logs from the database.
-    """
     try:
         ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id.strip()).first()
         if not ticket:
             return False, f"Ticket '{ticket_id}' not found in database."
 
-        # Cascade delete comments and audit logs
         db.query(TicketComment).filter(TicketComment.ticket_id == ticket_id.strip()).delete()
         db.query(TicketAuditLog).filter(TicketAuditLog.ticket_id == ticket_id.strip()).delete()
 
@@ -405,9 +328,6 @@ def delete_ticket(db: Session, ticket_id: str) -> Tuple[bool, Optional[str]]:
         return False, f"Failed to delete ticket: {str(e)}"
 
 
-# ==============================================================================
-# 7. COMMENTS & WORK NOTES
-# ==============================================================================
 def add_ticket_comment(
     db: Session,
     ticket_id: str,
@@ -416,9 +336,6 @@ def add_ticket_comment(
     author_role: str = "requester",
     is_internal_note: bool = False
 ) -> Tuple[Optional[TicketComment], Optional[str]]:
-    """
-    Adds a message or internal technician note to a ticket thread.
-    """
     if not message or not message.strip():
         return None, "Comment message cannot be empty."
 
@@ -433,7 +350,6 @@ def add_ticket_comment(
         )
         db.add(comment)
 
-        # Audit log entry for comment
         note_type = "internal_note" if is_internal_note else "public_comment"
         db.add(TicketAuditLog(
             ticket_id=ticket_id.strip(),
@@ -454,9 +370,6 @@ def add_ticket_comment(
 
 
 def get_ticket_comments(db: Session, ticket_id: str, include_internal: bool = True) -> List[TicketComment]:
-    """
-    Fetches chronological comments for a ticket.
-    """
     try:
         query = db.query(TicketComment).filter(TicketComment.ticket_id == ticket_id.strip())
         if not include_internal:
@@ -467,9 +380,6 @@ def get_ticket_comments(db: Session, ticket_id: str, include_internal: bool = Tr
 
 
 def get_ticket_audit_logs(db: Session, ticket_id: str) -> List[TicketAuditLog]:
-    """
-    Fetches full chronological audit history for a ticket.
-    """
     try:
         return db.query(TicketAuditLog).filter(
             TicketAuditLog.ticket_id == ticket_id.strip()
@@ -478,17 +388,11 @@ def get_ticket_audit_logs(db: Session, ticket_id: str) -> List[TicketAuditLog]:
         return []
 
 
-# ==============================================================================
-# 8. INITIAL SEED HELPER
-# ==============================================================================
 def seed_initial_tickets(db: Session) -> int:
-    """
-    Populates realistic starter tickets, comments, and audit histories if empty.
-    """
     if db.query(Ticket).count() > 0:
         return 0
 
-    sample_seed_data = [
+    seeds = [
         {
             "ticket_type": "Incident",
             "employee_name": "Jordan Hayes",
@@ -553,11 +457,10 @@ def seed_initial_tickets(db: Session) -> int:
     ]
 
     count = 0
-    for item in sample_seed_data:
+    for item in seeds:
         ticket, err = create_ticket(db, item)
         if ticket:
             count += 1
-            # Add realistic initial comment thread
             if ticket.ticket_id == "USM1001":
                 add_ticket_comment(
                     db,

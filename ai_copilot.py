@@ -1,20 +1,8 @@
-"""
-AI Operations Copilot Module for Unified Service Management (USM & ESM).
-Inspired by BMC HelixGPT and ITIL 4 / Atlassian AI Service Management principles:
-1. Executive Incident Summarization (handover briefs & root-cause distillation)
-2. Semantic Historical Incident Correlation (retrieving resolved fixes)
-3. Generative ITIL Resolution & Customer Reply Drafting
-4. Sentiment, Urgency & Risk Scoring with Transparent Governance Explainability
-5. ESM Business Value & Deflection Telemetry Calculation
-"""
-
 import os
 import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-
 from models import Ticket, TicketComment, TicketAuditLog
 
 try:
@@ -29,31 +17,25 @@ except Exception:
     LLM_MODEL_NAME = "gpt-4o-mini"
 
 
-# ==============================================================================
-# 1. EXECUTIVE INCIDENT SUMMARIZER
-# ==============================================================================
 def summarize_incident_thread(
     ticket: Ticket,
     comments: Optional[List[TicketComment]] = None,
     audit_logs: Optional[List[TicketAuditLog]] = None
 ) -> Dict[str, str]:
-    """
-    Produces a structured 3-part executive briefing of the ticket and its activity stream.
-    Compatible with OpenAI LLM when active, or high-precision deterministic synthesis offline.
-    """
     comments = comments or []
     audit_logs = audit_logs or []
 
-    # If OpenAI is configured, attempt LLM summarization
     if is_openai_configured():
         try:
             from openai import OpenAI
             client = OpenAI(api_key=get_openai_api_key())
 
-            thread_txt = f"Ticket: {ticket.ticket_id} - {ticket.title}\n"
-            thread_txt += f"Category: {ticket.category} | Priority: {ticket.priority} | Status: {ticket.status}\n"
-            thread_txt += f"Reporter: {ticket.employee_name} ({ticket.department})\n"
-            thread_txt += f"Description: {ticket.description}\n"
+            thread_txt = (
+                f"Ticket: {ticket.ticket_id} - {ticket.title}\n"
+                f"Category: {ticket.category} | Priority: {ticket.priority} | Status: {ticket.status}\n"
+                f"Reporter: {ticket.employee_name} ({ticket.department})\n"
+                f"Description: {ticket.description}\n"
+            )
             if ticket.resolution_notes:
                 thread_txt += f"Resolution Notes: {ticket.resolution_notes}\n"
 
@@ -64,12 +46,11 @@ def summarize_incident_thread(
                     thread_txt += f"[{kind}] {c.author_name}: {c.message}\n"
 
             prompt = (
-                "You are an ITIL 4 Master Incident Manager AI. "
-                "Synthesize this service ticket thread into a crisp 3-part operational summary:\n"
-                "1. SYMPTOM_AND_BLAST_RADIUS: 1-2 sentences on what failed and employee/business impact.\n"
-                "2. DIAGNOSTIC_STATUS: Key observations from notes, comments, or resolution attempts so far.\n"
-                "3. NEXT_RECOMMENDED_STEP: Concrete next action for the assigned technician.\n"
-                "Return raw text formatted clearly under those three capitalized headings."
+                "You are an IT incident manager. Summarize this ticket into three sections:\n"
+                "1. SYMPTOM_AND_BLAST_RADIUS: 1-2 sentences on what failed and impact.\n"
+                "2. DIAGNOSTIC_STATUS: Key observations from notes, comments, or attempts so far.\n"
+                "3. NEXT_RECOMMENDED_STEP: Concrete next action for the technician.\n"
+                "Format clearly under those three capitalized headings."
             )
 
             res = client.chat.completions.create(
@@ -83,17 +64,15 @@ def summarize_incident_thread(
             )
             raw = res.choices[0].message.content
 
-            # Parse sections
             symptom = "Disruption observed on " + ticket.title
             diagnostic = "Under active engineering review."
             next_step = "Engage assigned technician to fulfill target SLA."
 
-            lines = raw.split("\n")
-            curr_section = None
             buf: Dict[str, List[str]] = {"symptom": [], "diagnostic": [], "next_step": []}
+            curr_section = None
 
-            for l in lines:
-                l_str = l.strip()
+            for line in raw.split("\n"):
+                l_str = line.strip()
                 if "SYMPTOM" in l_str.upper():
                     curr_section = "symptom"
                 elif "DIAGNOSTIC" in l_str.upper():
@@ -114,13 +93,15 @@ def summarize_incident_thread(
                 "symptom": symptom,
                 "diagnostic": diagnostic,
                 "next_step": next_step,
-                "engine": "HelixGPT (OpenAI)"
+                "engine": "OpenAI"
             }
         except Exception:
-            pass  # Fall back gracefully
+            pass
 
-    # High-precision deterministic summarization
-    symptom = f"Unplanned disruption logged by {ticket.employee_name} ({ticket.department}) concerning '{ticket.title}'. Impact scoped to {ticket.category} infrastructure."
+    symptom = (
+        f"Unplanned disruption logged by {ticket.employee_name} ({ticket.department}) "
+        f"concerning '{ticket.title}'. Impact scoped to {ticket.category} infrastructure."
+    )
 
     comment_count = len(comments)
     internal_count = sum(1 for c in comments if c.is_internal_note)
@@ -128,7 +109,10 @@ def summarize_incident_thread(
 
     if comments:
         latest = comments[-1]
-        diagnostic = f"{comment_count} journal entries recorded ({internal_count} work notes, {public_count} customer updates). Latest update from {latest.author_name}: \"{latest.message[:90]}...\""
+        diagnostic = (
+            f"{comment_count} journal entries recorded ({internal_count} work notes, {public_count} customer updates). "
+            f"Latest update from {latest.author_name}: \"{latest.message[:90]}...\""
+        )
     elif ticket.resolution_notes:
         diagnostic = f"Resolution documented: \"{ticket.resolution_notes[:100]}...\""
     else:
@@ -151,20 +135,8 @@ def summarize_incident_thread(
     }
 
 
-# ==============================================================================
-# 2. HISTORICAL INCIDENT CORRELATION (SIMILAR TICKET RETRIEVAL)
-# ==============================================================================
-def correlate_similar_incidents(
-    ticket: Ticket,
-    db: Session,
-    top_k: int = 3
-) -> List[Dict[str, Any]]:
-    """
-    Scans previously resolved or active database tickets for matching symptom signatures.
-    Returns similar historical cases with their verified resolutions.
-    """
+def correlate_similar_incidents(ticket: Ticket, db: Session, top_k: int = 3) -> List[Dict[str, Any]]:
     try:
-        # Extract keywords from title and description
         clean_text = f"{ticket.title} {ticket.description}".lower()
         tokens = set(re.findall(r"[a-zA-Z0-9_-]{3,}", clean_text))
         stop_words = {
@@ -173,25 +145,18 @@ def correlate_similar_incidents(
         }
         keywords = [t for t in tokens if t not in stop_words]
 
-        # Query past tickets (excluding current ticket)
-        candidates = db.query(Ticket).filter(
-            Ticket.ticket_id != ticket.ticket_id
-        ).all()
+        candidates = db.query(Ticket).filter(Ticket.ticket_id != ticket.ticket_id).all()
 
         scored = []
         for cand in candidates:
             score = 0.0
             cand_text = f"{cand.title} {cand.description}".lower()
 
-            # Category match bonus
             if cand.category.lower() == ticket.category.lower():
                 score += 3.0
-
-            # Priority match bonus
             if cand.priority == ticket.priority:
                 score += 1.0
 
-            # Keyword overlap
             for kw in keywords:
                 if kw in cand_text:
                     score += 1.5
@@ -204,10 +169,8 @@ def correlate_similar_incidents(
 
         results = []
         for score, cand in top_candidates:
-            # Check for resolution notes or comments
             verified_fix = cand.resolution_notes
             if not verified_fix:
-                # Check for technician comments
                 fix_comment = db.query(TicketComment).filter(
                     TicketComment.ticket_id == cand.ticket_id,
                     TicketComment.author_role.in_(["technician", "lead"])
@@ -232,17 +195,11 @@ def correlate_similar_incidents(
         return []
 
 
-# ==============================================================================
-# 3. GENERATIVE RESOLUTION & CUSTOMER REPLY DRAFTER
-# ==============================================================================
 def draft_smart_resolution(
     ticket: Ticket,
     technician_name: str = "IT Operations Lead",
     similar_incident: Optional[Dict[str, Any]] = None
 ) -> Dict[str, str]:
-    """
-    Generates an ITIL-compliant customer resolution letter and technical work note.
-    """
     ref_fix = similar_incident["verified_fix"] if similar_incident else "Conducted diagnostic verification and refreshed service credentials."
 
     if is_openai_configured():
@@ -254,8 +211,8 @@ def draft_smart_resolution(
                 f"Category: {ticket.category}. Requester: {ticket.employee_name}.\n"
                 f"Reference Solution: {ref_fix}.\n"
                 "Write two outputs:\n"
-                "1. CUSTOMER_CLOSURE: A polite, professional email to the employee explaining what was fixed, confirming stability, and inviting them to reply if issues persist.\n"
-                "2. TECHNICAL_POST_MORTEM: A concise internal technical root-cause note for the engineering journal.\n"
+                "1. CUSTOMER_CLOSURE: A polite email explaining what was fixed.\n"
+                "2. TECHNICAL_POST_MORTEM: A concise internal technical root-cause note.\n"
                 "Return raw text with the two headers."
             )
             res = client.chat.completions.create(
@@ -265,7 +222,7 @@ def draft_smart_resolution(
                 max_tokens=300
             )
             raw = res.choices[0].message.content
-            cust = "Hi " + ticket.employee_name + ",\n\nWe have verified and resolved your request regarding " + ticket.title + "."
+            cust = f"Hi {ticket.employee_name},\n\nWe have verified and resolved your request regarding {ticket.title}."
             tech = "Root cause addressed per standard SOP."
 
             if "CUSTOMER_CLOSURE" in raw and "TECHNICAL_POST_MORTEM" in raw:
@@ -279,7 +236,6 @@ def draft_smart_resolution(
         except Exception:
             pass
 
-    # Deterministic fallback
     customer_msg = (
         f"Hi {ticket.employee_name},\n\n"
         f"The operations engineering team has completed diagnostics regarding \"{ticket.title}\". "
@@ -301,24 +257,17 @@ def draft_smart_resolution(
     }
 
 
-# ==============================================================================
-# 4. SENTIMENT, URGENCY & GOVERNANCE RISK ANALYZER
-# ==============================================================================
 def analyze_sentiment_and_governance(ticket: Ticket) -> Dict[str, Any]:
-    """
-    Computes sentiment index, VIP business risk, and ITIL 4 explainability rationale.
-    """
     text = f"{ticket.title} {ticket.description}".lower()
 
-    # Frustration and urgency markers
     frustration_words = [
         "cannot work", "blocked", "blocking", "urgent", "emergency", "flicker", "flickering",
         "immediately", "asap", "down", "outage", "broken", "failing", "crash", "stopped",
         "drop", "dropping", "critical", "unresponsive", "deadline", "client meeting"
     ]
 
-    frustration_hits = [w for w in frustration_words if w in text]
-    hit_count = len(frustration_hits)
+    hits = [w for w in frustration_words if w in text]
+    hit_count = len(hits)
 
     if hit_count >= 3 or ticket.priority == "Critical":
         sentiment = "High Frustration / Business Critical"
@@ -326,8 +275,8 @@ def analyze_sentiment_and_governance(ticket: Ticket) -> Dict[str, Any]:
         sentiment_color = "#D95D39"
         risk_level = "High Risk"
         governance_rationale = (
-            f"Employee reports compounding blockers ('{', '.join(frustration_hits[:2])}'). "
-            "ITIL 4 Incident Governance mandates immediate technician dispatch and escalation to service owner."
+            f"Employee reports compounding blockers ('{', '.join(hits[:2])}'). "
+            "ITIL Incident Governance mandates immediate technician dispatch."
         )
     elif hit_count >= 1 or ticket.priority == "High":
         sentiment = "Elevated Urgency"
@@ -335,7 +284,7 @@ def analyze_sentiment_and_governance(ticket: Ticket) -> Dict[str, Any]:
         sentiment_color = "#D9822B"
         risk_level = "Moderate Risk"
         governance_rationale = (
-            f"Disruption keywords detected ('{frustration_hits[0] if frustration_hits else 'High Priority'}'). "
+            f"Disruption keywords detected ('{hits[0] if hits else 'High Priority'}'). "
             "Target response within 1 hour recommended to prevent SLA breach."
         )
     else:
@@ -343,10 +292,7 @@ def analyze_sentiment_and_governance(ticket: Ticket) -> Dict[str, Any]:
         sentiment_badge = "STANDARD FLOW"
         sentiment_color = "#3D8B68"
         risk_level = "Nominal"
-        governance_rationale = (
-            "Standard employee request with no acute urgency language. "
-            "Normal ITIL queue pacing and automated SOP self-service applicable."
-        )
+        governance_rationale = "Standard employee request. Normal queue pacing applies."
 
     return {
         "sentiment": sentiment,
@@ -354,38 +300,20 @@ def analyze_sentiment_and_governance(ticket: Ticket) -> Dict[str, Any]:
         "sentiment_color": sentiment_color,
         "risk_level": risk_level,
         "governance_rationale": governance_rationale,
-        "detected_markers": frustration_hits
+        "detected_markers": hits
     }
 
 
-# ==============================================================================
-# 5. ENTERPRISE SERVICE MANAGEMENT (ESM) BUSINESS VALUE TELEMETRY
-# ==============================================================================
 def get_esm_business_value_kpis(db: Session) -> Dict[str, Any]:
-    """
-    Calculates ESM ROI metrics: Deflection Rate, Hours Saved, CSAT Index,
-    and Proactive SLA Breach Radar.
-    """
     total_tickets = db.query(Ticket).count()
-    resolved_tickets = db.query(Ticket).filter(
-        Ticket.status.in_(["Resolved", "Closed"])
-    ).count()
+    resolved_tickets = db.query(Ticket).filter(Ticket.status.in_(["Resolved", "Closed"])).count()
 
-    # Simulate realistic deflection & automation statistics anchored to total records
-    # (Based on Atlassian 2026 report benchmark of 62-74% deflection in mature ESM deployments)
     simulated_deflections = max(18, int(total_tickets * 1.85))
     total_inquiries = total_tickets + simulated_deflections
     deflection_rate_pct = round((simulated_deflections / total_inquiries) * 100, 1) if total_inquiries > 0 else 68.4
 
-    # Hours saved calculation:
-    # - Each deflection saves ~22 minutes (0.36 hrs) of human triage & back-and-forth
-    # - Each AI-assisted resolution saves ~15 minutes (0.25 hrs)
-    hours_from_deflection = simulated_deflections * 0.36
-    hours_from_agent_assist = resolved_tickets * 0.25
-    total_hours_saved = round(hours_from_deflection + hours_from_agent_assist, 1)
+    hours_saved = round((simulated_deflections * 0.36) + (resolved_tickets * 0.25), 1)
 
-    # CSAT index (Scale 1.0 - 5.0)
-    # Higher resolution rate and fewer SLA breaches boost CSAT
     now = datetime.utcnow()
     breached_count = db.query(Ticket).filter(
         Ticket.status.notin_(["Resolved", "Closed"]),
@@ -399,7 +327,6 @@ def get_esm_business_value_kpis(db: Session) -> Dict[str, Any]:
     elif breached_count > 2:
         csat_score = 4.5
 
-    # Proactive SLA Breach Radar: Tickets expiring in under 2 hours
     danger_horizon = now + timedelta(hours=2)
     at_risk_tickets = db.query(Ticket).filter(
         Ticket.status.notin_(["Resolved", "Closed"]),
@@ -412,7 +339,7 @@ def get_esm_business_value_kpis(db: Session) -> Dict[str, Any]:
         "deflection_rate_pct": deflection_rate_pct,
         "total_deflections": simulated_deflections,
         "total_inquiries": total_inquiries,
-        "total_hours_saved": total_hours_saved,
+        "total_hours_saved": hours_saved,
         "csat_score": csat_score,
         "at_risk_count": len(at_risk_tickets),
         "at_risk_tickets": [
