@@ -1,0 +1,27 @@
+# Core Web & API Frameworks
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+streamlit>=1.32.0
+altair>=5.2.0
+pydantic>=2.6.0
+httpx>=0.27.0
+
+# Database & ORM
+sqlalchemy>=2.0.28
+python-dotenv>=1.0.1
+
+# AI & Agentic Orchestration
+langgraph>=0.0.30
+langchain>=0.1.13
+langchain-community>=0.0.29
+langchain-openai>=0.1.0
+openai>=1.14.0
+tiktoken>=0.6.0
+
+# Vector Database & Document Processing
+chromadb>=0.4.24
+pypdf>=4.1.0
+reportlab>=4.1.0
+
+# Model Context Protocol (MCP) SDK
+mcp>=1.0.0

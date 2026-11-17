@@ -1,0 +1,52 @@
+# ==============================================================================
+# RELAY GITIGNORE
+# ==============================================================================
+
+# Virtual Environments
+venv/
+env/
+.venv/
+venv_macos_backup/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.ruff_cache/
+
+# Local Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local Database Files & Vector Stores
+*.db
+*.sqlite
+*.sqlite3
+data/chroma_db/
+
+# Log files
+*.log
+logs/
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# IDE & Editor Directories
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Streamlit Credentials
+.streamlit/credentials.toml
+
+# System / Scratch artifacts
+.system_generated/
+scratch/

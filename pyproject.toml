@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "relay-ops"
+version = "1.0.0"
+description = "Autonomous Enterprise Service Operations Platform with LangGraph, RAG, and ITIL SLA Automation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Relay Engineering Team", email = "operations@relay-ops.internal" }
+]
+keywords = [
+    "itsm",
+    "esm",
+    "langgraph",
+    "rag",
+    "fastapi",
+    "streamlit",
+    "chromadb",
+    "itil",
+    "model-context-protocol",
+    "mcp"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "streamlit>=1.32.0",
+    "altair>=5.2.0",
+    "pydantic>=2.6.0",
+    "httpx>=0.27.0",
+    "sqlalchemy>=2.0.28",
+    "python-dotenv>=1.0.1",
+    "langgraph>=0.0.30",
+    "langchain>=0.1.13",
+    "langchain-community>=0.0.29",
+    "langchain-openai>=0.1.0",
+    "openai>=1.14.0",
+    "tiktoken>=0.6.0",
+    "chromadb>=0.4.24",
+    "pypdf>=4.1.0",
+    "reportlab>=4.1.0",
+    "mcp>=1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
